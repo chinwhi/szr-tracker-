@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auction vs Market</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: verdict first, then four price tiles, inputs, one chart of cost by buy size, a table twin of it, then a saved log. */
+:root{
+  --bg:#f2f3f6; --surface:#ffffff; --ink:#0f1115; --ink2:#4b5160; --mute:#737a89; --line:#e1e4ea;
+  --mkt:#2a78d6; --auc:#eb6834; --good:#006300; --bad:#b3261e;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0c0d10; --surface:#15171c; --ink:#eceef2; --ink2:#b6bbc6; --mute:#8b92a0; --line:#262a33;
+    --mkt:#3987e5; --auc:#d95926; --good:#0ca30c; --bad:#ff7a70; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0c0d10; --surface:#15171c; --ink:#eceef2; --ink2:#b6bbc6; --mute:#8b92a0; --line:#262a33;
+  --mkt:#3987e5; --auc:#d95926; --good:#0ca30c; --bad:#ff7a70; color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg)}
+body{font-family:var(--sans);color:var(--ink);line-height:1.45;padding:22px 16px 56px}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-size:26px;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+.sub{color:var(--ink2);font-size:15px;margin-top:4px;max-width:70ch}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px}
+.card h2{font-size:16px;font-weight:600;margin-bottom:2px}
+.hint{color:var(--mute);font-size:13px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.verdict{display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-left:6px solid var(--mkt)}
+.verdict.auction{border-left-color:var(--auc)}
+.verdict .big{font-size:24px;font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;padding:3px 10px;border-radius:99px;background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.tile .k{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.tile .v{font-size:21px;margin-top:4px}
+.tile .u{font-size:13px;color:var(--ink2);margin-top:2px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px 14px;margin-top:12px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--ink2)}
+label.f input{font:inherit;font-family:var(--mono);font-size:15px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+label.f input:focus-visible{outline:2px solid var(--mkt);outline-offset:1px}
+label.f input.bad{border-color:var(--bad)}
+label.f small{color:var(--mute);font-size:12px}
+details{margin-top:12px}
+summary{cursor:pointer;font-size:14px;color:var(--ink2)}
+summary:focus-visible{outline:2px solid var(--mkt);outline-offset:2px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--ink2);margin:8px 0 4px}
+.legend i{display:inline-block;width:18px;height:0;border-top:3px solid;vertical-align:middle;margin-right:6px}
+.legend i.dash{border-top-style:dashed;border-top-width:2px}
+.chart{position:relative;width:100%}
+.chart svg{display:block;width:100%;height:auto;touch-action:pan-y}
+.tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.18);min-width:190px;z-index:2}
+.tip b{font-weight:600}
+.tip .r{display:flex;justify-content:space-between;gap:12px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-size:12px;font-weight:500;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+td.win{color:var(--good);font-weight:600}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+button{font:inherit;font-size:14px;font-weight:500;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:8px 14px;cursor:pointer}
+button.primary{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+button:focus-visible{outline:2px solid var(--mkt);outline-offset:2px}
+ul.notes{padding-left:18px;color:var(--ink2);font-size:14px;display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.warn{margin-top:10px;font-size:13px;color:var(--bad)}
+
+#calcOut th,#calcOut td{white-space:normal;padding:8px 6px;font-size:13px;vertical-align:top}#calcOut td.num{font-size:13px}
+#arbOut th,#arbOut td,#lnOut th,#lnOut td,#lnScen th,#lnScen td{white-space:normal;padding:8px 6px;font-size:13px;vertical-align:top}
+.flow{display:flex;flex-direction:column;gap:10px}
+.leg{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.leg h3{font-size:14px;font-weight:600}
+.leg .rule{font-size:13px;color:var(--ink2)}
+.dests{display:flex;gap:8px;flex-wrap:wrap}
+.dest{flex:1 1 150px;min-width:0;background:var(--bg);border-radius:10px;padding:8px 10px}
+.dest .dk{font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+.dest .dv{font-size:16px;margin-top:2px}
+.dest .du{font-size:12px;color:var(--ink2)}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--ink2);margin-left:6px}
+.tag.off{color:var(--bad)}
+@media (prefers-reduced-motion:no-preference){.verdict,.tile{transition:border-color .2s}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>SZR: auction or market?</h1>
+  <p class="sub">What you pay for 1 SZR in the protocol auction and in the Uniswap v4 pool, for the size you want to buy. The numbers are read straight from the Robinhood Chain contracts: the auction price from the Core contract, the market price and depth from the Uniswap v4 SZR/WETH pool (1% fee, one liquidity band). It reads the chain every 5 seconds while the page is open, with no server in between. The money-flow sections add up every event since the protocol started and update every 15 seconds.</p>
+</header>
+
+<div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px"><span id="liveDot" class="dot" style="background:var(--mute);margin:0"></span><span id="liveTxt" class="hint" style="flex:1;min-width:160px">Connecting to Robinhood Chain…</span><button id="btnLive">Pause</button></div>
+<section class="card verdict" id="verdict" aria-live="polite"></section>
+
+<section class="tiles" id="tiles"></section>
+
+<section class="card" id="secCalc">
+  <h2>Calculator</h2>
+  <p class="hint">How much SZR you get for an amount of WETH ("1 ETH" works the same), in the market and in the auction. Uses the live prices above.</p>
+  <div class="grid">
+    <label class="f">Amount <input id="calcAmt" class="num" inputmode="decimal" value="1"><small>What you want to spend</small></label>
+    <label class="f">In <select id="calcUnit" class="num" style="font:inherit;font-size:15px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px"><option value="weth">WETH / ETH</option><option value="usd">US dollars</option></select><small>ETH price comes from "Your numbers"</small></label>
+  </div>
+  <div class="btns" id="calcPresets"></div>
+  <div class="scroll" style="margin-top:12px"><table id="calcOut"></table></div>
+  <p class="hint" id="calcNote" style="margin-top:10px"></p>
+</section>
+
+<section class="card" id="secArb">
+  <h2>Arbitrage</h2>
+  <p class="hint">Buy SZR in the auction and sell it straight into the pool. It only pays when the pool price (after the 1% fee and your own price drop) is above the auction price. It does not work the other way round, because the auction does not buy SZR back.</p>
+  <div id="arbVerdict" class="hint" style="margin:10px 0;font-size:15px;color:var(--ink)"></div>
+  <div class="grid">
+    <label class="f">Size to test in WETH <input id="arbSize" class="num" inputmode="decimal" value="0.1"><small>What you spend in the auction</small></label>
+  </div>
+  <div class="scroll" style="margin-top:12px"><table id="arbOut"></table></div>
+  <p class="hint" id="arbNote" style="margin-top:10px"></p>
+</section>
+
+<section class="card" id="secLoan">
+  <h2>Loan calculator</h2>
+  <p class="hint">Buy SZR, lock it, borrow WETH against its floor value, buy more, repeat. Shows what you could win or lose at different prices. The loan fee is 1% and there is no interest.</p>
+  <div class="grid">
+    <label class="f">Your own money in WETH <input id="lnEq" class="num" inputmode="decimal" value="1"><small>What you put in yourself</small></label>
+    <label class="f">Number of loans <select id="lnRounds" class="num" style="font:inherit;font-size:15px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px"><option>0</option><option>1</option><option selected>3</option><option>5</option><option>8</option><option>12</option></select><small>0 = just buy and hold</small></label>
+    <label class="f">Buy SZR in <select id="lnVenue" class="num" style="font:inherit;font-size:15px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px"><option value="auction">The auction</option><option value="market">The market</option></select><small>Market uses the pool depth and fee</small></label>
+  </div>
+  <div class="scroll" style="margin-top:12px"><table id="lnOut"></table></div>
+  <div class="scroll" style="margin-top:12px"><table id="lnScen"></table></div>
+  <p class="hint" id="lnNote" style="margin-top:10px"></p>
+</section>
+
+<section class="card" id="secTrade">
+  <h2>Trading and fees</h2>
+  <p class="hint">Read from the pool's swap events since the pool started. Buyers pay the 1% fee in WETH, sellers pay it in SZR.</p>
+  <div class="tiles" id="tradeTiles" style="margin-top:12px"></div>
+  <p id="snowNote" class="hint" style="margin-top:12px;color:var(--ink2)"></p>
+</section>
+
+<section class="card" id="secFlow">
+  <h2>Where the money goes</h2>
+  <p class="hint">Every amount is added up from the contracts' own events, from the first day until now. The rule on each line is from the code.</p>
+  <div id="flow" style="margin-top:12px"></div>
+</section>
+
+<section class="card">
+  <h2>Who holds what</h2>
+  <div class="scroll"><table id="tblHold"></table></div>
+</section>
+
+<section class="card">
+  <h2>Latest swaps</h2>
+  <div class="scroll"><table id="tblSwaps"></table></div>
+</section>
+
+<section class="card">
+  <h2>Your numbers</h2>
+  <p class="hint">Prices are in WETH per 1 SZR. You can type 7.453e-7.</p>
+  <div class="grid">
+    <label class="f">Market price <input id="inMkt" class="num" inputmode="decimal" value="7.453e-7"><small>Pool page, price in WETH</small></label>
+    <label class="f">Auction price <input id="inAuc" class="num" inputmode="decimal" value="7.708e-7"><small>Auction page, "price now"</small></label>
+    <label class="f">Floor (NAV) <input id="inNav" class="num" inputmode="decimal" value="4.636e-7"><small>Auction page, NAV in WETH</small></label>
+    <label class="f">ETH price in USD <input id="inEth" class="num" inputmode="decimal" value="1672"><small>From backing: $129,117 / 77.2337 WETH</small></label>
+    <label class="f">Buy size in WETH <input id="inSize" class="num" inputmode="decimal" value="0.1"><small>What you plan to spend</small></label>
+    <label class="f">Auction slippage in % <input id="inSlip" class="num" inputmode="decimal" value="0"><small>Read it off the auctions page for your size</small></label>
+    <label class="f">Pool fee in % <input id="inFee" class="num" inputmode="decimal" value="1"><small>Assumed. Check the pool's fee tier</small></label>
+    <label class="f">Available in auction (SZR) <input id="inAvail" class="num" inputmode="decimal" value="3284956"><small>Auction page, released and unsold</small></label>
+  </div>
+  <p class="hint" id="liveNote" style="margin-top:10px"></p>
+</section>
+
+<section class="card">
+  <h2>What 1 SZR costs, by buy size</h2>
+  <p class="hint">A bigger buy moves the pool price up. The auction price stays flat unless you enter slippage.</p>
+  <div class="legend" id="legend"></div>
+  <div class="chart" id="chartA"></div>
+</section>
+
+<section class="card">
+  <h2>The same, as a table</h2>
+  <div class="scroll"><table id="tbl"></table></div>
+</section>
+
+<section class="card">
+  <h2>Prices over time</h2>
+  <p class="hint">One point every 15 seconds while the page is open. "Save snapshot" keeps the current numbers as an extra point in this browser.</p>
+  <div class="legend" id="legendB"></div>
+  <div class="chart" id="chartB"></div>
+  <div class="btns">
+    <button class="primary" id="btnSave">Save snapshot</button>
+    <button id="btnClear">Clear my snapshots</button>
+  </div>
+  <div class="scroll" style="margin-top:10px"><table id="tblB"></table></div>
+</section>
+
+<section class="card">
+  <h2>How this is estimated</h2>
+  <ul class="notes">
+    <li>Market cost uses the pool's liquidity band, the fee you enter, and the price move your buy causes. It ignores gas and any other liquidity that joins the pool.</li>
+    <li>Auction cost is the quoted price plus the slippage you enter, because the auction curve moves with each buy like a Uniswap V2 pool. Its price decays toward 1.5 times the floor over two days of sale time.</li>
+    <li>"Break-even size" is the buy size where both cost the same. Below it the market is cheaper, above it the auction is cheaper.</li>
+    <li>This is a rough guide. Check the quote in the swap window before you trade.</li>
+  </ul>
+</section>
+
+</div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var HISTORY=[];var LAST=null;
+  var KEY="szr-auction-market-snapshots";
+  var ids=["inMkt","inAuc","inNav","inEth","inSize","inSlip","inFee","inAvail"];
+  var DEF={inMkt:7.453e-7,inAuc:7.708e-7,inNav:4.636e-7,inEth:1672,inSize:0.1,inSlip:0,inFee:1,inAvail:3284956};
+
+  function loadSnaps(){try{var r=localStorage.getItem(KEY);var a=r?JSON.parse(r):[];return Array.isArray(a)?a:[]}catch(e){return []}}
+  function saveSnaps(a){try{localStorage.setItem(KEY,JSON.stringify(a))}catch(e){}}
+  var mine=loadSnaps();
+  function fill(){
+    if(!LAST)return;
+    $("inMkt").value=LAST.mkt.toExponential(3);$("inAuc").value=LAST.auc.toExponential(4);$("inNav").value=LAST.nav.toExponential(4);
+    $("liveNote").textContent="Pool liquidity L = "+Math.round(LAST.L).toLocaleString("en-US")+" (in-range, tick "+LAST.tick+"). Backing "+LAST.backing.toFixed(4)+" WETH, active supply "+Math.round(LAST.active).toLocaleString("en-US")+" SZR.";
+  }
+  var RPC="https://rpc.mainnet.chain.robinhood.com",CORE="0x094802cE72613a7010AbC9aB0f5e311d26B1c696",PM="0x8366a39CC670B4001A1121B8F6A443A643e40951";
+  var SLOT0=BigInt("0xaf61ddbc4ac60e0a14cb2455d58455c1621fef90d428614e78703223c919e0bf");
+  var live=true,timer=null,lastOk=0,lastHist=0;
+  function sl(n){return"0x1e2eaeaf"+n.toString(16).padStart(64,"0")}
+  function readChain(){
+    var calls=[[CORE,"0xa035b1fe"],[CORE,"0xbabd7012"],[CORE,"0xf1e12685"],[PM,sl(SLOT0)],[PM,sl(SLOT0+3n)]];
+    var body=calls.map(function(c,i){return{jsonrpc:"2.0",id:i,method:"eth_call",params:[{to:c[0],data:c[1]},"latest"]}});
+    return fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()}).then(function(j){
+      var v=[];j.forEach(function(x){if(!x.result)throw new Error("empty result");v[x.id]=BigInt(x.result)});
+      var price=Number(v[0])/1e18,active=Number(v[1])/1e18,backing=Number(v[2])/1e18;
+      var sq=v[3]&((1n<<160n)-1n),tk=Number((v[3]>>160n)&0xFFFFFFn);if(tk>=8388608)tk-=16777216;
+      var sp=Number(sq)/Math.pow(2,96),L=Number(v[4]&((1n<<128n)-1n))/1e18;
+      return{t:Date.now(),nav:backing/active,auc:price,mkt:1/(sp*sp),backing:backing,active:active,L:L,tick:tk};
+    });
+  }
+  function setStatus(ok,msg){$("liveDot").style.background=ok?"var(--good)":"var(--bad)";$("liveTxt").textContent=msg}
+  function lock(on){["inMkt","inAuc","inNav"].forEach(function(id){$(id).readOnly=on})}
+  function tick(){
+    readChain().then(function(p){
+      LAST=p;lastOk=Date.now();
+      if(Date.now()-lastHist>=15000||!HISTORY.length){HISTORY.push(p);if(HISTORY.length>240)HISTORY.shift();lastHist=Date.now()}
+      if(live){fill();renderAll();renderB()}
+    }).catch(function(e){setStatus(false,"Cannot reach the chain ("+e.message+"). Open this page as a file or on your own site, not inside Claude.")});
+  }
+  function statusLoop(){
+    if(!lastOk)return;var age=Math.round((Date.now()-lastOk)/1000);
+    if(live)setStatus(age<20,"Live · updated "+age+"s ago · every 5 seconds");else setStatus(false,"Paused · last read "+age+"s ago. Your numbers will not change.");
+  }
+
+  // ---------- events and flows
+  var FROM=114300000,CHUNK=3000000;
+  var ADDR={core:"0x094802cE72613a7010AbC9aB0f5e311d26B1c696",liq:"0x8c1261C469E83E93aa19Af8f07FD939078Dd1344",pm:"0x8366a39CC670B4001A1121B8F6A443A643e40951",eco:"0xF33A5aFc4F569538DEBe3d70ac56Ca03833D7E3a",jar:"0x2dEAfc4E19820F13BBfBf845a811B088d00F3e6D",weth:"0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",szr:"0x51a5F4C3fe40A09b0EDDBfa034cf5F3F27e5958C"};
+  var POOL="0x952f3610e46b377cc87f7c3247ff199169eb7ddc9e3b01cea5aafabf30f4b84e";
+  var TOP={swap:"0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
+    auction:"0x2e75d9301ccf7a5e537b8d28266787ce2f9d51916d59b09869c38acc292217f4",redeem:"0xf3a670cd3af7d64b488926880889d08a8585a138ff455227af6737339a1ec262",
+    borrow:"0xc4381c9c7b508979896c55381c1cb8c2aef28d753cff7661f9cd87b9a14584f8",fees:"0x667e2506f4ae51cf5a3198684a78d7de3a70ea3ffd43fc36bcf3861adacfab82",
+    recycled:"0xc4e500ed5dd24e9779d7dbe145a7bdaa21fff587f7a70476559f7d73f28a3ca0",szrdon:"0xfbe76fd073259bf33eed71e05dfbf78406641772e7b038b9c58495bc091e6d5c",
+    bkdon:"0x635ddcd813ba648ef2e4162ac75addacbea3dc0895de8143d36a22a7f25e4173",migr:"0xa79faf639f50f4403343ad54db2149a50e45c39fb9b2939f436d770fa8ec3b9f",
+    collected:"0xa54e6c2fc0861aa9c991b26891d71059d517983b9e84b91020f42609c452eb9d",sent:"0xf00a5a640bf815e80b842cbf4a7a0a478f32341c20a2bd5b0f3ff5bb7c7c0482",
+    funded:"0x9b33de65796bf7946578e690d1f0f64a2436090d0c733d74af7dee4c66df993e"};
+  var NAME={};Object.keys(TOP).forEach(function(k){NAME[TOP[k]]=k});
+  var EV=[],seen={},evTo=FROM-1,bt={},rate=9.5,nowBlock=0,nowTs=0,eventsReady=false,hold={};
+  function words(d){d=d.slice(2);var w=[];for(var i=0;i<d.length;i+=64)w.push(d.slice(i,i+64));return w}
+  function u(w){return Number(BigInt("0x"+w))/1e18}
+  function sg(w){return Number(BigInt.asIntN(256,BigInt("0x"+w)))/1e18}
+  function post(b){return fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b)}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json()})}
+  function logReq(id,addr,topics,a,b){return{jsonrpc:"2.0",id:id,method:"eth_getLogs",params:[{address:addr,fromBlock:"0x"+a.toString(16),toBlock:"0x"+b.toString(16),topics:topics}]}}
+  function ingest(lg){
+    var key=lg.transactionHash+":"+lg.logIndex;if(seen[key])return;seen[key]=1;
+    var k=NAME[lg.topics[0]];if(!k)return;var w=words(lg.data),e={k:k,b:parseInt(lg.blockNumber,16),tx:lg.transactionHash};
+    if(k==="swap"){e.who="0x"+lg.topics[2].slice(26);e.a0=sg(w[0]);e.a1=sg(w[1])}
+    else if(k==="auction"){e.tokens=u(w[0]);e.pay=u(w[1]);e.backing=u(w[2]);e.funding=u(w[3])}
+    else if(k==="redeem"){e.tokens=u(w[0]);e.weth=u(w[1])}
+    else if(k==="borrow"){e.coll=u(w[0]);e.princ=u(w[1]);e.fee=u(w[2])}
+    else if(k==="fees"){e.amt=u(w[0]);e.res=u(w[1]);e.team=u(w[2])}
+    else if(k==="collected"){e.szr=u(w[0]);e.weth=u(w[1])}
+    else if(k==="migr"){e.tokens=u(w[0]);e.weth=u(w[1])}
+    else if(k==="recycled"||k==="szrdon"){e.tokens=u(w[0])}
+    else if(k==="bkdon"||k==="funded"){e.amt=u(w[0])}
+    else if(k==="sent"){e.amt=u(w[0])}
+    EV.push(e);
+  }
+  function fetchEvents(upto){
+    var reqs=[],id=0,a=evTo+1;
+    while(a<=upto){var b=Math.min(a+CHUNK-1,upto);
+      reqs.push(logReq(id++,ADDR.pm,[TOP.swap,POOL],a,b));
+      [TOP.auction,TOP.redeem,TOP.borrow,TOP.fees,TOP.recycled,TOP.szrdon,TOP.bkdon,TOP.migr].forEach(function(t){reqs.push(logReq(id++,ADDR.core,[t],a,b))});
+      [TOP.collected,TOP.sent,TOP.funded].forEach(function(t){reqs.push(logReq(id++,ADDR.liq,[t],a,b))});
+      a=b+1}
+    if(!reqs.length)return Promise.resolve();
+    return Promise.all(reqs.map(function(r){return post(r)})).then(function(j){
+      j.forEach(function(x){if(!x.result)throw new Error((x.error&&x.error.message)||"log error");x.result.forEach(ingest)});
+      evTo=upto;
+    });
+  }
+  function blockTimes(list){
+    var need=list.filter(function(n){return bt[n]===undefined});
+    if(!need.length)return Promise.resolve();
+    return post(need.map(function(n,i){return{jsonrpc:"2.0",id:i,method:"eth_getBlockByNumber",params:["0x"+n.toString(16),false]}})).then(function(j){
+      j.forEach(function(x){if(x.result)bt[need[x.id]]=parseInt(x.result.timestamp,16)})});
+  }
+  function sum(arr,f){var t=0;arr.forEach(function(e){t+=f(e)});return t}
+  function ofKind(k,since){return EV.filter(function(e){return e.k===k&&(since===undefined||e.b>=since)})}
+  function agg(since){
+    var sw=ofKind("swap",since),buys=sw.filter(function(e){return e.a0<0}),sells=sw.filter(function(e){return e.a0>0});
+    var A=ofKind("auction",since),R=ofKind("redeem",since),B=ofKind("borrow",since),F=ofKind("fees",since),C=ofKind("collected",since),M=ofKind("migr",since),Y=ofKind("recycled",since),Fu=ofKind("funded",since),Se=ofKind("sent",since);
+    return{swaps:sw.length,buys:buys.length,sells:sells.length,
+      wethIn:sum(buys,function(e){return-e.a0}),wethOut:sum(sells,function(e){return e.a0}),
+      szrSold:sum(sells,function(e){return-e.a1}),szrBought:sum(buys,function(e){return e.a1}),
+      auctions:A.length,aTok:sum(A,function(e){return e.tokens}),aPay:sum(A,function(e){return e.pay}),aBack:sum(A,function(e){return e.backing}),aFund:sum(A,function(e){return e.funding}),
+      redeems:R.length,rTok:sum(R,function(e){return e.tokens}),rWeth:sum(R,function(e){return e.weth}),
+      loans:B.length,lColl:sum(B,function(e){return e.coll}),lPrinc:sum(B,function(e){return e.princ}),lFee:sum(B,function(e){return e.fee}),
+      feeAmt:sum(F,function(e){return e.amt}),feeRes:sum(F,function(e){return e.res}),feeTeam:sum(F,function(e){return e.team}),
+      colSzr:sum(C,function(e){return e.szr}),colWeth:sum(C,function(e){return e.weth}),
+      migr:M.length,mTok:sum(M,function(e){return e.tokens}),mWeth:sum(M,function(e){return e.weth}),
+      recycled:sum(Y,function(e){return e.tokens}),funded:sum(Fu,function(e){return e.amt}),sent:sum(Se,function(e){return e.amt})};
+  }
+  function fW(v){var a=Math.abs(v);return a===0?"0":a>=100?v.toFixed(1):a>=1?v.toFixed(2):a>=0.01?v.toFixed(4):v.toFixed(6)}
+  function fU(v){var d=Math.abs(v*(read().inEth)),sg=v<0?"-":"",t=d>=1000?"$"+Math.round(d).toLocaleString("en-US"):d>=1?"$"+d.toFixed(2):"$"+d.toFixed(3);return sg+t}
+  function fS(v){return v>=1e6?(v/1e6).toFixed(2)+"M":v>=1e3?(v/1e3).toFixed(1)+"k":v.toFixed(0)}
+  function short(a){return a.slice(0,6)+"…"+a.slice(-4)}
+  function dt(n,pre){return'<div class="dest"><div class="dk">'+n+'</div><div class="dv num">'+pre[0]+'</div><div class="du">'+pre[1]+'</div></div>'}
+  function tileT(k,v,u2,c){return tile(k,v,u2,c)}
+
+  function renderEvents(){
+    if(!eventsReady||!LAST)return;
+    var since24=nowBlock-Math.round(rate*86400),all=agg(),d24=agg(since24);
+    var poolStart=EV.filter(function(e){return e.k==="swap"}).reduce(function(m,e){return Math.min(m,e.b)},nowBlock);
+    var days=Math.max(0.1,(nowBlock-poolStart)/rate/86400);
+    var feeGen=all.wethIn*(read().inFee/100),feeGen24=d24.wethIn*(read().inFee/100);
+    $("tradeTiles").innerHTML=
+      tileT("Volume, last 24h",fW(d24.wethIn+d24.wethOut)+" WETH",fU(d24.wethIn+d24.wethOut)+" · "+d24.swaps+" swaps ("+d24.buys+" buys, "+d24.sells+" sells)","var(--mkt)")+
+      tileT("Volume, since start",fW(all.wethIn+all.wethOut)+" WETH",fU(all.wethIn+all.wethOut)+" in "+days.toFixed(1)+" days · "+all.swaps+" swaps","var(--mkt)")+
+      tileT("WETH fees made",fW(feeGen)+" WETH",fU(feeGen)+" since start · "+fW(feeGen24)+" in 24h","var(--auc)")+
+      tileT("Fees collected so far",fW(all.colWeth)+" WETH",fW(Math.max(0,feeGen-all.colWeth))+" still waiting in the pool","var(--ink2)");
+    var perDayRes=d24.feeRes+0;var need=0.01*LAST.backing/(0.67*(read().inFee/100));
+    $("snowNote").textContent="Fees alone move the floor very little: in the last 24h only "+fW(feeGen24*0.67)+" WETH of fee income reached the reserves ("+(LAST.backing?(feeGen24*0.67/LAST.backing*100).toFixed(3):"0")+"% of "+LAST.backing.toFixed(1)+" WETH). For fees alone to lift the floor 1% in a day, buyers would have to put in about "+Math.round(need)+" WETH ("+fU(need)+") per day through the pool. Fees paid in SZR (sellers) go back to the auction, not to the floor.";
+
+    // flow legs
+    var fl=[];
+    fl.push('<div class="leg"><h3>1. Someone buys SZR in the pool<span class="tag">WETH side</span></h3><div class="rule">The pool keeps 1% of the WETH that comes in. The protocol\'s own liquidity (POL) owns the pool position, so the fee belongs to it. Anyone can trigger the collection. When it is collected, 67% goes to the reserves and 33% to the team (SzrCore.recognizeFees).</div><div class="dests">'+
+      dt("Fees made by buyers",[fW(feeGen)+" WETH",fU(feeGen)])+
+      dt("Collected",[fW(all.colWeth)+" WETH",all.colWeth?"in "+ofKind("collected").length+" collections":"nothing collected"])+
+      dt("To reserves (floor)",[fW(all.feeRes)+" WETH",fU(all.feeRes)+" · 67%"])+
+      dt("To team",[fW(all.feeTeam)+" WETH",fU(all.feeTeam)+" · 33%"])+'</div></div>');
+    fl.push('<div class="leg"><h3>2. Someone sells SZR in the pool<span class="tag">SZR side</span></h3><div class="rule">The fee is paid in SZR. When collected, those tokens are not burned. They go back into the auction inventory (SzrCore.recycle), so they can be sold again later.</div><div class="dests">'+
+      dt("SZR sold into the pool",[fS(all.szrSold)+" SZR",all.sells+" sells"])+
+      dt("SZR fees recycled",[all.recycled.toFixed(1)+" SZR","back to auction inventory"])+'</div></div>');
+    fl.push('<div class="leg"><h3>3. Someone buys in the auction</h3><div class="rule">The payment covers the floor price of the tokens plus a premium. The floor part goes to the reserves. Of the premium, one third goes to the reserves and two thirds to the protocol liquidity (POL). The POL part stays in the Liquidity contract until the manager announces a destination, and then it can move after 7 days.</div><div class="dests">'+
+      dt("Bought",[fS(all.aTok)+" SZR",all.auctions+" purchases · "+fW(all.aPay)+" WETH paid"])+
+      dt("To reserves (floor)",[fW(all.aBack)+" WETH",fU(all.aBack)])+
+      dt("To POL",[fW(all.aFund)+" WETH",fU(all.aFund)+" · held, "+(all.sent?fW(all.sent)+" sent out":"nothing sent out")])+'</div></div>');
+    var lentNow=Math.max(0,LAST.backing-hold.reserveCash);
+    fl.push('<div class="leg"><h3>4. Someone takes a loan</h3><div class="rule">The borrower locks SZR and takes WETH out of the reserves, up to the floor value of the SZR. A 1% fee is taken from the loan and goes to the reserves. There is no interest and no liquidation, but a loan expires after 90 days without activity.</div><div class="dests">'+
+      dt("Loans taken",[all.loans+" loans",fS(all.lColl)+" SZR locked"])+
+      dt("WETH lent out, in total",[fW(all.lPrinc)+" WETH",fU(all.lPrinc)])+
+      dt("Lent out right now",[fW(lentNow)+" WETH",(LAST.backing?(lentNow/LAST.backing*100).toFixed(1):"0")+"% of the backing"])+
+      dt("Loan fees to reserves",[fW(all.lFee)+" WETH",fU(all.lFee)])+'</div></div>');
+    fl.push('<div class="leg"><h3>5. Someone redeems SZR at the floor</h3><div class="rule">The holder gets the floor value in WETH out of the reserves and the SZR returns to auction inventory.</div><div class="dests">'+
+      dt("Redemptions",[all.redeems+" times",fS(all.rTok)+" SZR"])+
+      dt("WETH paid out",[fW(all.rWeth)+" WETH",fU(all.rWeth)])+'</div></div>');
+    fl.push('<div class="leg"><h3>6. Migration from the old token</h3><div class="rule">Holders of old SZR swapped into the new token. The WETH they brought is the starting backing.</div><div class="dests">'+
+      dt("Migrations",[all.migr+" wallets",fS(all.mTok)+" new SZR"])+
+      dt("WETH moved into backing",[fW(all.mWeth)+" WETH",fU(all.mWeth)])+'</div></div>');
+    fl.push('<div class="leg"><h3>7. Arbitrage hook and vaults<span class="tag off">not live</span></h3><div class="rule">The dev says this is still waiting for last reviews. When it goes live, 30% of arbitrage profit would go to the protocol and 70% to the market recipient (non-SZR markets). In the SZR market the profit is retired into the auction. Nothing has flowed through it yet.</div></div>');
+    $("flow").innerHTML='<div class="flow">'+fl.join("")+'</div>';
+
+    // holdings
+    $("tblHold").innerHTML='<thead><tr><th>Where</th><th>Holds</th><th>What it means</th></tr></thead><tbody>'+
+      '<tr><td>Reserves (Core)</td><td class="num">'+fW(hold.reserveCash)+' WETH<br><span class="hint">'+fU(hold.reserveCash)+'</span></td><td style="white-space:normal;text-align:left">Cash behind the floor. With the loans out it counts as '+fW(LAST.backing)+' WETH of backing.</td></tr>'+
+      '<tr><td>Protocol liquidity (POL)</td><td class="num">'+fW(hold.liqWeth)+' WETH<br><span class="hint">'+fU(hold.liqWeth)+'</span></td><td style="white-space:normal;text-align:left">Auction proceeds waiting in the Liquidity contract. Controlled by the manager '+short("0x099Abbe33c279C8b02c5ecD75AD15FEF4b7F8d36")+'.</td></tr>'+
+      '<tr><td>Team fees waiting</td><td class="num">'+fW(hold.ecoWeth)+' WETH<br><span class="hint">'+fU(hold.ecoWeth)+'</span></td><td style="white-space:normal;text-align:left">Claimable by the team beneficiary '+short(hold.benef||"0x0")+'. Anyone can trigger the payout, but it only goes to that address.</td></tr>'+
+      '<tr><td>Pool (Uniswap v4)</td><td class="num">'+fW(hold.poolWeth)+' WETH<br><span class="hint">'+fU(hold.poolWeth)+'</span></td><td style="white-space:normal;text-align:left">All WETH held by the Uniswap PoolManager for every pool on this chain. The SZR pool is only a part of it.</td></tr></tbody>';
+
+    // latest swaps
+    var last=ofKind("swap").slice(-12).reverse(),h='<thead><tr><th>When</th><th>Side</th><th>WETH</th><th>SZR</th><th>Price</th><th>Wallet</th></tr></thead><tbody>';
+    last.forEach(function(e){var buy=e.a0<0,w=Math.abs(e.a0),z=Math.abs(e.a1),ago=(nowBlock-e.b)/rate;
+      h+='<tr><td>'+(ago<90?Math.round(ago)+"s":ago<5400?Math.round(ago/60)+"m":ago<172800?(ago/3600).toFixed(1)+"h":(ago/86400).toFixed(1)+"d")+' ago</td><td class="'+(buy?"win":"")+'" style="color:'+(buy?"var(--good)":"var(--bad)")+';font-weight:600">'+(buy?"Buy":"Sell")+'</td><td class="num">'+fW(w)+'</td><td class="num">'+fS(z)+'</td><td class="num">'+(z?(w/z).toExponential(3):"")+'</td><td class="num">'+short(e.who)+'</td></tr>'});
+    $("tblSwaps").innerHTML=h+'</tbody>';
+  }
+  function holdTick(){
+    var calls=[[ADDR.core,"0x08dbc490"],[ADDR.weth,"0x70a08231"+ADDR.eco.slice(2).toLowerCase().padStart(64,"0")],[ADDR.weth,"0x70a08231"+ADDR.liq.slice(2).toLowerCase().padStart(64,"0")],[ADDR.weth,"0x70a08231"+ADDR.pm.slice(2).toLowerCase().padStart(64,"0")],[ADDR.eco,"0x38af3eed"]];
+    return post(calls.map(function(c,i){return{jsonrpc:"2.0",id:i,method:"eth_call",params:[{to:c[0],data:c[1]},"latest"]}})).then(function(j){
+      var v=[];j.forEach(function(x){v[x.id]=BigInt(x.result)});
+      hold={reserveCash:Number(v[0])/1e18,ecoWeth:Number(v[1])/1e18,liqWeth:Number(v[2])/1e18,poolWeth:Number(v[3])/1e18,benef:"0x"+v[4].toString(16).padStart(40,"0")};
+    });
+  }
+  var busy=false;
+  function eventsTick(){
+    if(busy)return;busy=true;
+    post({jsonrpc:"2.0",id:1,method:"eth_blockNumber",params:[]}).then(function(j){
+      nowBlock=parseInt(j.result,16);
+      var need=[nowBlock];if(!nowTs)need.push(nowBlock-1000000);
+      return blockTimes(need).then(function(){
+        if(bt[nowBlock]&&bt[nowBlock-1000000]&&!nowTs){rate=1000000/(bt[nowBlock]-bt[nowBlock-1000000])}
+        nowTs=bt[nowBlock]||nowTs;
+        return fetchEvents(nowBlock);
+      });
+    }).then(function(){return holdTick()}).then(function(){eventsReady=true;renderEvents()}).catch(function(e){window.__evErr=e.message;console.log("EVERR "+e.message)}).then(function(){busy=false});
+  }
+  function start(){tick();eventsTick();setInterval(eventsTick,15000);timer=setInterval(function(){if(live)tick()},5000);setInterval(statusLoop,1000)}
+  $("btnLive").addEventListener("click",function(){live=!live;this.textContent=live?"Pause":"Resume";lock(live);if(live)tick();statusLoop()});
+
+  function read(){
+    var o={};
+    ids.forEach(function(id){
+      var el=$(id);var v=parseFloat(el.value);
+      var ok=isFinite(v)&&(id==="inSlip"||id==="inFee"?v>=0:v>0);
+      el.classList.toggle("bad",!ok);
+      o[id]=ok?v:DEF[id];
+    });
+    return o;
+  }
+
+  function model(p){
+    var Lc=LAST&&LAST.L?LAST.L:17939.3;
+    var s0=1/Math.sqrt(p.inMkt),L=Lc,fee=p.inFee/100,slip=p.inSlip/100;
+    var aucPrice=p.inAuc*(1+slip);
+    function mkt(x){
+      var net=x*(1-fee),s1=1/(1/s0+net/L),tok=L*(s0-s1);
+      return{tokens:tok,eff:x/tok};
+    }
+    function auc(x){
+      var want=x/aucPrice,tok=Math.min(want,p.inAvail);
+      return{tokens:tok,eff:aucPrice,capped:want>p.inAvail};
+    }
+    var be=null;
+    if(mkt(1e-9).eff>=aucPrice){be=0}
+    else{
+      var hi=1;while(mkt(hi).eff<aucPrice&&hi<1e6)hi*=2;
+      if(hi<1e6){var lo=0;for(var i=0;i<60;i++){var mid=(lo+hi)/2;if(mkt(mid).eff<aucPrice)lo=mid;else hi=mid}be=(lo+hi)/2}
+    }
+    return{p:p,L:Lc,mkt:mkt,auc:auc,aucPrice:aucPrice,be:be,saleMin:1.5*p.inNav};
+  }
+
+  function fmtP(v){return v.toExponential(3)}
+  function usd(v,eth){var d=v*eth;return"$"+(d<0.01?d.toFixed(6):d.toFixed(4))}
+  function fmtN(v){return Math.round(v).toLocaleString("en-US")}
+  function pct(v){return(v*100).toFixed(1)+"%"}
+  function wethFmt(v){return v<0.1?v.toFixed(3):v<10?v.toFixed(2):v.toFixed(1)}
+  function when(t){var d=new Date(t);return d.toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",second:"2-digit"})}
+
+  function renderTop(m){
+    var p=m.p,x=p.inSize,a=m.auc(x),k=m.mkt(x);
+    var marketWins=k.eff<a.eff;
+    var win=marketWins?k:a,lose=marketWins?a:k;
+    var more=win.tokens/lose.tokens-1;
+    var v=$("verdict");
+    v.className="card verdict"+(marketWins?"":" auction");
+    var line;
+    if(Math.abs(more)<0.0005){line="Both cost the same at this size."}
+    else{line="You get "+pct(more)+" more SZR for "+wethFmt(x)+" WETH ("+usd(x,p.inEth).replace(/\.\d+$/,"")+").";}
+    var need="";
+    if(marketWins){
+      var req=k.eff/(1+p.inSlip/100);
+      if(req>=m.saleMin){need="The auction matches you when its price falls to "+fmtP(req)+". Its minimum is "+fmtP(m.saleMin)+", so it can get there."}
+      else{need="The auction would have to fall to "+fmtP(req)+", below its minimum of "+fmtP(m.saleMin)+". It cannot match the market at this size."}
+    }else{need="The auction is cheaper at this size. Above the break-even size it stays cheaper."}
+    v.innerHTML='<div><div class="big">'+(marketWins?"Buy on the market":"Buy in the auction")+'</div><div class="hint" style="margin-top:2px">'+line+'</div></div><span class="pill">✓ cheaper per SZR</span><div class="hint" style="flex-basis:100%">'+need+(a.capped?" The auction has only "+fmtN(p.inAvail)+" SZR available, so it cannot fill this size.":"")+'</div>';
+    var beTxt=m.be===null?"Never within range":m.be===0?"Auction always cheaper":wethFmt(m.be)+" WETH";
+    var beSub=m.be&&m.be>0?"≈ "+usd(m.be,p.inEth).replace(/\.\d+$/,""):(m.be===null?"Market cheaper at every size":"");
+    $("tiles").innerHTML=
+      tile("Market price",fmtP(p.inMkt),usd(p.inMkt,p.inEth)+" per SZR","var(--mkt)")+
+      tile("Auction price",fmtP(p.inAuc),usd(p.inAuc,p.inEth)+" per SZR","var(--auc)")+
+      tile("Auction minimum",fmtP(m.saleMin),"1.5 × floor "+fmtP(p.inNav),"var(--mute)")+
+      tile("Break-even size",beTxt,beSub,"var(--ink2)");
+    
+    $("legend").innerHTML='<span><i style="border-color:var(--mkt)"></i>Market, per SZR including fee and price move</span><span><i style="border-color:var(--auc)"></i>Auction, per SZR</span><span><i class="dash" style="border-color:var(--mute)"></i>Auction minimum</span><span><i class="dash" style="border-color:var(--ink2)"></i>Floor (NAV)</span>';
+  }
+  function tile(k,v,u,c){return'<div class="tile"><div class="k"><span class="dot" style="background:'+c+'"></span>'+k+'</div><div class="v num">'+v+'</div><div class="u">'+u+'</div></div>'}
+
+  function renderTable(m){
+    var p=m.p,sizes=[0.01,0.05,0.1,0.25,0.5,1,2];
+    var h='<thead><tr><th>Buy size</th><th>Market per SZR</th><th>Auction per SZR</th><th>Cheaper</th><th>SZR gain</th></tr></thead><tbody>';
+    sizes.forEach(function(x){
+      var k=m.mkt(x),a=m.auc(x),mw=k.eff<a.eff,g=(mw?k.tokens/a.tokens:a.tokens/k.tokens)-1;
+      h+='<tr><td class="num">'+x+' WETH <span class="hint">('+usd(x,p.inEth).replace(/\.\d+$/,"")+')</span></td><td class="num">'+fmtP(k.eff)+'</td><td class="num">'+fmtP(a.eff)+'</td><td class="'+(mw?"win":"win")+'">'+(mw?"Market":"Auction")+'</td><td class="num">+'+pct(g)+'</td></tr>';
+    });
+    $("tbl").innerHTML=h+'</tbody>';
+  }
+
+  var tipEl=null;
+  function svgEl(tag,attrs){var e=document.createElementNS("http://www.w3.org/2000/svg",tag);for(var k in attrs)e.setAttribute(k,attrs[k]);return e}
+
+  function renderChartA(m){
+    var box=$("chartA");box.innerHTML="";
+    var p=m.p,W=Math.max(300,box.clientWidth),H=300,mg={l:54,r:70,t:14,b:42};
+    var iw=W-mg.l-mg.r,ih=H-mg.t-mg.b;
+    var xmax=(m.be&&isFinite(m.be))?Math.max(m.be*2.2,p.inSize*1.3,0.2):Math.max(p.inSize*2,1);
+    var N=80,xs=[];for(var i=0;i<=N;i++)xs.push(Math.max(xmax*i/N,xmax*0.004));
+    var mk=xs.map(function(x){return m.mkt(x).eff});
+    var lo=Math.min(p.inNav,mk[0],m.aucPrice,m.saleMin)*0.93,hi=Math.max(mk[N],m.aucPrice,m.saleMin)*1.05;
+    function X(v){return mg.l+v/xmax*iw}
+    function Y(v){return mg.t+(1-(v-lo)/(hi-lo))*ih}
+    var svg=svgEl("svg",{viewBox:"0 0 "+W+" "+H,role:"img","aria-label":"Cost per SZR by buy size, market versus auction"});
+    for(var g=0;g<=4;g++){
+      var gv=lo+(hi-lo)*g/4,gy=Y(gv);
+      svg.appendChild(svgEl("line",{x1:mg.l,x2:W-mg.r,y1:gy,y2:gy,stroke:"var(--line)","stroke-width":1}));
+      var t=svgEl("text",{x:mg.l-8,y:gy+4,"text-anchor":"end","font-size":11,fill:"var(--mute)","font-family":"var(--mono)"});t.textContent=(gv*1e7).toFixed(2);svg.appendChild(t);
+    }
+    for(var q=0;q<=4;q++){
+      var xv=xmax*q/4,xx=X(xv);
+      var tx=svgEl("text",{x:xx,y:H-mg.b+18,"text-anchor":q===0?"start":q===4?"end":"middle","font-size":11,fill:"var(--mute)","font-family":"var(--mono)"});tx.textContent=xv<1?xv.toFixed(2):xv.toFixed(1);svg.appendChild(tx);
+    }
+    var ax=svgEl("text",{x:mg.l+iw/2,y:H-6,"text-anchor":"middle","font-size":12,fill:"var(--ink2)"});ax.textContent="buy size in WETH";svg.appendChild(ax);
+    var ay=svgEl("text",{x:mg.l,y:10,"font-size":11,fill:"var(--mute)"});ay.textContent="price, ×10⁻⁷ WETH per SZR";svg.appendChild(ay);
+    function hline(v,color,dash){svg.appendChild(svgEl("line",{x1:mg.l,x2:W-mg.r,y1:Y(v),y2:Y(v),stroke:color,"stroke-width":dash?1.5:2.5,"stroke-dasharray":dash?"5 4":"none","stroke-linecap":"round"}))}
+    hline(p.inNav,"var(--ink2)",true);hline(m.saleMin,"var(--mute)",true);hline(m.aucPrice,"var(--auc)",false);
+    var d=xs.map(function(x,i){return(i?"L":"M")+X(x).toFixed(1)+" "+Y(mk[i]).toFixed(1)}).join(" ");
+    svg.appendChild(svgEl("path",{d:d,fill:"none",stroke:"var(--mkt)","stroke-width":2.5,"stroke-linejoin":"round","stroke-linecap":"round"}));
+    // direct labels, nudged apart
+    var labs=[{y:Y(mk[N]),t:"Market",c:"var(--mkt)"},{y:Y(m.aucPrice),t:"Auction",c:"var(--auc)"},{y:Y(m.saleMin),t:"Minimum",c:"var(--mute)"},{y:Y(p.inNav),t:"Floor",c:"var(--ink2)"}].sort(function(a,b){return a.y-b.y});
+    for(var j=1;j<labs.length;j++){if(labs[j].y-labs[j-1].y<14)labs[j].y=labs[j-1].y+14}
+    labs.forEach(function(l){var e=svgEl("text",{x:W-mg.r+6,y:l.y+4,"font-size":12,"font-weight":600,fill:l.c});e.textContent=l.t;svg.appendChild(e)});
+    if(p.inSize<=xmax){
+      svg.appendChild(svgEl("line",{x1:X(p.inSize),x2:X(p.inSize),y1:mg.t,y2:H-mg.b,stroke:"var(--ink2)","stroke-width":1,"stroke-dasharray":"2 3"}));
+      var ys=svgEl("text",{x:X(p.inSize)+4,y:mg.t+10,"font-size":11,fill:"var(--ink2)"});ys.textContent="your size";svg.appendChild(ys);
+    }
+    if(m.be&&m.be<=xmax){
+      var bx=X(m.be),by=Y(m.aucPrice);
+      svg.appendChild(svgEl("circle",{cx:bx,cy:by,r:6,fill:"var(--surface)",stroke:"var(--ink)","stroke-width":2}));
+      var bt=svgEl("text",{x:bx,y:by-12,"text-anchor":"middle","font-size":11,fill:"var(--ink)","font-weight":600});bt.textContent="break-even "+wethFmt(m.be);svg.appendChild(bt);
+    }
+    var cross=svgEl("line",{y1:mg.t,y2:H-mg.b,stroke:"var(--ink)","stroke-width":1,opacity:0});svg.appendChild(cross);
+    var dm=svgEl("circle",{r:5,fill:"var(--mkt)",stroke:"var(--surface)","stroke-width":2,opacity:0});svg.appendChild(dm);
+    var hit=svgEl("rect",{x:mg.l,y:mg.t,width:iw,height:ih,fill:"transparent"});svg.appendChild(hit);
+    box.appendChild(svg);
+    tipEl=document.createElement("div");tipEl.className="tip";tipEl.style.display="none";box.appendChild(tipEl);
+    function move(ev){
+      var r=svg.getBoundingClientRect(),sc=W/r.width,px=(ev.clientX-r.left)*sc;
+      var xv=Math.min(xmax,Math.max(xmax*0.004,(px-mg.l)/iw*xmax));
+      var k=m.mkt(xv),a=m.auc(xv),mw=k.eff<a.eff;
+      cross.setAttribute("x1",X(xv));cross.setAttribute("x2",X(xv));cross.setAttribute("opacity",.35);
+      dm.setAttribute("cx",X(xv));dm.setAttribute("cy",Y(k.eff));dm.setAttribute("opacity",1);
+      tipEl.innerHTML='<b>Buy '+wethFmt(xv)+' WETH</b> <span class="hint">('+usd(xv,p.inEth).replace(/\.\d+$/,"")+')</span>'+
+        '<div class="r"><span style="color:var(--mkt)">Market</span><span class="num">'+fmtP(k.eff)+'</span></div>'+
+        '<div class="r"><span style="color:var(--auc)">Auction</span><span class="num">'+fmtP(a.eff)+'</span></div>'+
+        '<div class="r"><span>Cheaper</span><b>'+(mw?"Market":"Auction")+'</b></div>';
+      tipEl.style.display="block";
+      var tw=tipEl.offsetWidth,left=(X(xv)/sc)+12;if(left+tw>r.width)left=(X(xv)/sc)-tw-12;
+      tipEl.style.left=Math.max(0,left)+"px";tipEl.style.top="8px";
+    }
+    function leave(){cross.setAttribute("opacity",0);dm.setAttribute("opacity",0);tipEl.style.display="none"}
+    hit.addEventListener("pointermove",move);hit.addEventListener("pointerdown",move);hit.addEventListener("pointerleave",leave);
+  }
+
+  function allSnaps(){return HISTORY.concat(mine)}
+  function renderB(){
+    var pts=allSnaps(),box=$("chartB");box.innerHTML="";
+    if(!pts.length)return;
+    $("legendB").innerHTML='<span><i style="border-color:var(--mkt)"></i>Market</span><span><i style="border-color:var(--auc)"></i>Auction</span><span><i class="dash" style="border-color:var(--mute)"></i>Auction minimum (1.5 × floor)</span>';
+    var W=Math.max(300,box.clientWidth),H=240,mg={l:54,r:16,t:14,b:34},iw=W-mg.l-mg.r,ih=H-mg.t-mg.b;
+    var t0=Math.min.apply(null,pts.map(function(s){return s.t})),t1=Math.max.apply(null,pts.map(function(s){return s.t}));
+    if(t1-t0<60000){t1=t0+60000}
+    var vals=[];pts.forEach(function(s){vals.push(s.auc,s.mkt,1.5*s.nav)});
+    var lo=Math.min.apply(null,vals)*0.95,hi=Math.max.apply(null,vals)*1.05;
+    function X(t){return mg.l+(t-t0)/(t1-t0)*iw}function Y(v){return mg.t+(1-(v-lo)/(hi-lo))*ih}
+    var svg=svgEl("svg",{viewBox:"0 0 "+W+" "+H,role:"img","aria-label":"Auction and market price over saved snapshots"});
+    for(var g=0;g<=3;g++){var gv=lo+(hi-lo)*g/3,gy=Y(gv);svg.appendChild(svgEl("line",{x1:mg.l,x2:W-mg.r,y1:gy,y2:gy,stroke:"var(--line)"}));var t=svgEl("text",{x:mg.l-8,y:gy+4,"text-anchor":"end","font-size":11,fill:"var(--mute)","font-family":"var(--mono)"});t.textContent=(gv*1e7).toFixed(2);svg.appendChild(t)}
+    var xl=svgEl("text",{x:mg.l,y:H-8,"font-size":11,fill:"var(--mute)"});xl.textContent=when(t0);svg.appendChild(xl);
+    var xr=svgEl("text",{x:W-mg.r,y:H-8,"text-anchor":"end","font-size":11,fill:"var(--mute)"});xr.textContent=when(t1);svg.appendChild(xr);
+    var yl=svgEl("text",{x:mg.l,y:10,"font-size":11,fill:"var(--mute)"});yl.textContent="price, ×10⁻⁷ WETH per SZR";svg.appendChild(yl);
+    function line(key,color,dash,fn){
+      var d=pts.map(function(s,i){return(i?"L":"M")+X(s.t).toFixed(1)+" "+Y(fn(s)).toFixed(1)}).join(" ");
+      if(pts.length>1)svg.appendChild(svgEl("path",{d:d,fill:"none",stroke:color,"stroke-width":dash?1.5:2.5,"stroke-dasharray":dash?"5 4":"none","stroke-linejoin":"round"}));
+      pts.forEach(function(s){svg.appendChild(svgEl("circle",{cx:X(s.t),cy:Y(fn(s)),r:pts.length>40?1.5:dash?3:5,fill:color,stroke:"var(--surface)","stroke-width":2}))});
+    }
+    line("min","var(--mute)",true,function(s){return 1.5*s.nav});
+    line("auc","var(--auc)",false,function(s){return s.auc});
+    line("mkt","var(--mkt)",false,function(s){return s.mkt});
+    box.appendChild(svg);
+    var h='<thead><tr><th>Time</th><th>Market</th><th>Auction</th><th>Floor</th><th>Auction vs market</th><th></th></tr></thead><tbody>';
+    pts.forEach(function(s,i){
+      if(i<pts.length-12)return;
+      var diff=(s.auc/s.mkt-1);
+      h+='<tr><td>'+when(s.t)+(s.seed?' <span class="hint">(from screenshots)</span>':'')+'</td><td class="num">'+fmtP(s.mkt)+'</td><td class="num">'+fmtP(s.auc)+'</td><td class="num">'+fmtP(s.nav)+'</td><td class="num">'+(diff>=0?"+":"")+pct(diff)+'</td><td>'+(i<HISTORY.length?"":'<button data-del="'+(i-HISTORY.length)+'" aria-label="Delete this snapshot">Delete</button>')+'</td></tr>';
+    });
+    $("tblB").innerHTML=h+'</tbody>';
+    Array.prototype.forEach.call(document.querySelectorAll("[data-del]"),function(b){b.addEventListener("click",function(){mine.splice(+b.getAttribute("data-del"),1);saveSnaps(mine);renderB()})});
+  }
+
+
+  function renderCalc(m){
+    var p=m.p,unit=$("calcUnit").value,raw=parseFloat($("calcAmt").value);
+    $("calcAmt").classList.toggle("bad",!(raw>0));
+    var amt=raw>0?raw:1,w=unit==="usd"?amt/p.inEth:amt;
+    var mk=m.mkt(w),au=m.auc(w),s0=1/Math.sqrt(p.inMkt),Lc=m.L,net=w*(1-p.inFee/100),s1=1/(1/s0+net/Lc);
+    var impact=(s0*s0)/(s1*s1)-1,more=mk.tokens>au.tokens?mk.tokens/au.tokens-1:au.tokens/mk.tokens-1,mw=mk.tokens>au.tokens;
+    var feePaid=w*p.inFee/100;
+    $("calcOut").innerHTML='<thead><tr><th></th><th>Market</th><th>Auction</th></tr></thead><tbody>'+
+            '<tr><td><b>You get</b></td><td class="num"><b>'+Math.round(mk.tokens).toLocaleString("en-US")+' SZR</b></td><td class="num"><b>'+Math.round(au.tokens).toLocaleString("en-US")+' SZR</b></td></tr>'+
+      '<tr><td>Worth at the floor</td><td class="num">'+fU(mk.tokens*p.inNav)+'</td><td class="num">'+fU(au.tokens*p.inNav)+'</td></tr>'+
+      '<tr><td>Price you pay per SZR</td><td class="num">'+fmtP(mk.eff)+'</td><td class="num">'+fmtP(au.eff)+'</td></tr>'+
+      '<tr><td>Above the floor by</td><td class="num">'+((mk.eff/p.inNav-1)*100).toFixed(0)+'%</td><td class="num">'+((au.eff/p.inNav-1)*100).toFixed(0)+'%</td></tr>'+
+      '<tr><td>Fee</td><td class="num">'+fW(feePaid)+' WETH</td><td class="num">in the price</td></tr>'+
+      '<tr><td>Pool price moves</td><td class="num">+'+(impact*100).toFixed(1)+'%</td><td class="num">none entered</td></tr></tbody>';
+    $("calcNote").textContent=(Math.abs(more)<0.0005?"Both give the same amount.":(mw?"The market gives you ":"The auction gives you ")+(more*100).toFixed(1)+"% more SZR.")+(au.capped?" The auction only has "+fmtN(p.inAvail)+" SZR available, so it cannot fill this amount.":"")+" After a market buy the pool price would be about "+fmtP(p.inMkt*(1+impact))+".";
+    var pr=[0.1,0.5,1,2,5],h="";
+  }
+
+  function renderLoan(m){
+    var p=m.p,E=parseFloat($("lnEq").value),n=parseInt($("lnRounds").value),venue=$("lnVenue").value,sf=p.inFee/100;
+    $("lnEq").classList.toggle("bad",!(E>0));if(!(E>0))E=1;
+    function buy(w){return venue==="auction"?Math.min(w/m.aucPrice,p.inAvail):m.mkt(w).tokens}
+    var T=0,D=0,fees=0,cash=0,spend=0,w=E,capped=false;
+    if(n===0){T=buy(E);spend=E}
+    for(var k=0;k<n;k++){
+      var tok=buy(w);if(venue==="auction"&&w/m.aucPrice>p.inAvail)capped=true;
+      spend+=w;T+=tok;var b=tok*p.inNav;D+=b;fees+=b*0.01;var rec=b*0.99;
+      if(k<n-1)w=rec;else cash=rec;
+    }
+    function val(P){var sell=T*P*(1-sf);return n===0?sell:cash+Math.max(sell-D,0)}
+    var be=n===0?E/(T*(1-sf)):(E+D-cash)/(T*(1-sf));
+    var avg=spend/T;
+    $("lnOut").innerHTML='<tbody>'+
+      '<tr><td>You hold</td><td class="num">'+Math.round(T).toLocaleString("en-US")+' SZR</td></tr>'+
+      '<tr><td>Your exposure</td><td class="num">'+(spend/E).toFixed(2)+'× your own money</td></tr>'+
+      '<tr><td>Average price you pay</td><td class="num">'+fmtP(avg)+'</td></tr>'+
+      '<tr><td>Debt to repay</td><td class="num">'+fW(D)+' WETH ('+fU(D)+')</td></tr>'+
+      '<tr><td>Loan fees paid</td><td class="num">'+fW(fees)+' WETH</td></tr>'+
+      '<tr><td>Break-even sell price</td><td class="num">'+fmtP(be)+' ('+((be/p.inMkt-1)*100>=0?"+":"")+((be/p.inMkt-1)*100).toFixed(1)+'% vs market now)</td></tr></tbody>';
+    var sc=[["At the floor",p.inNav],["−30%",p.inMkt*0.7],["Same as now",p.inMkt],["+25%",p.inMkt*1.25],["+50%",p.inMkt*1.5],["+100%",p.inMkt*2]];
+    var h='<thead><tr><th>If SZR sells at</th><th>Price</th><th>You end with</th><th>Result</th></tr></thead><tbody>';
+    sc.forEach(function(r){var v=val(r[1]),pl=(v-E)/E*100;h+='<tr><td>'+r[0]+'</td><td class="num">'+fmtP(r[1])+'</td><td class="num">'+fW(v)+' WETH</td><td class="num" style="font-weight:600;color:'+(pl>=0?"var(--good)":"var(--bad)")+'">'+(pl>=0?"+":"")+pl.toFixed(0)+'%</td></tr>'});
+    $("lnScen").innerHTML=h+'</tbody>';
+    $("lnNote").textContent="Selling is assumed at that price with the pool fee only. A big sell moves the pool price down more. Debt must be repaid to get the SZR back; if the price is below the floor you can let the loans expire (90 days without activity), keep the WETH you borrowed and lose the locked SZR."+(capped?" The auction does not have enough SZR for every round, so the amounts are capped.":"");
+  }
+
+  function renderArb(m){
+    var p=m.p,fee=p.inFee/100,s0=1/Math.sqrt(p.inMkt),Lc=m.L,x=parseFloat($("arbSize").value);
+    $("arbSize").classList.toggle("bad",!(x>0));if(!(x>0))x=0.1;
+    function out(w){var t=Math.min(w/m.aucPrice,p.inAvail),spent=Math.min(w,t*m.aucPrice),s1=s0+t*(1-fee)/Lc,got=Lc*(1/s0-1/s1);return{t:t,spent:spent,got:got,pl:got-spent}}
+    var maxW=p.inAvail*m.aucPrice,best={pl:-1,w:0},zero=0,N=400;
+    for(var i=1;i<=N;i++){var w=maxW*Math.pow(i/N,3),o=out(w);if(o.pl>best.pl){best={pl:o.pl,w:w,o:o}}if(o.pl>0)zero=w}
+    var margin=p.inMkt*(1-fee)/m.aucPrice-1,needAuc=p.inMkt*(1-fee);
+    var cur=out(x);
+    $("arbVerdict").innerHTML=best.pl>0?'<b style="color:var(--good)">There is a profit right now</b>: best about '+fW(best.pl)+' WETH ('+fU(best.pl)+') at '+fW(best.w)+' WETH.':'<b style="color:var(--bad)">No profit right now.</b> The auction costs '+fmtP(m.aucPrice)+' and a small sale into the pool returns about '+fmtP(needAuc)+' per SZR after the fee ('+(margin*100).toFixed(1)+'%). It pays when the auction price falls to '+fmtP(needAuc)+' or the pool price rises.';
+    var needTxt=needAuc>=m.saleMin?"The auction can fall that far (its minimum is "+fmtP(m.saleMin)+"), but it takes time.":"The auction cannot fall that far (its minimum is "+fmtP(m.saleMin)+"), so only a higher pool price can open a profit.";
+    $("arbOut").innerHTML='<thead><tr><th></th><th>Your size</th><th>Best size</th></tr></thead><tbody>'+
+      '<tr><td>You spend</td><td class="num">'+fW(cur.spent)+' WETH</td><td class="num">'+(best.pl>0?fW(best.o.spent)+' WETH':"-")+'</td></tr>'+
+      '<tr><td>SZR bought</td><td class="num">'+Math.round(cur.t).toLocaleString("en-US")+'</td><td class="num">'+(best.pl>0?Math.round(best.o.t).toLocaleString("en-US"):"-")+'</td></tr>'+
+      '<tr><td>You get from the pool</td><td class="num">'+fW(cur.got)+' WETH</td><td class="num">'+(best.pl>0?fW(best.o.got)+' WETH':"-")+'</td></tr>'+
+      '<tr><td><b>Result</b></td><td class="num" style="font-weight:600;color:'+(cur.pl>=0?"var(--good)":"var(--bad)")+'">'+(cur.pl>=0?"+":"")+fW(cur.pl)+' WETH ('+fU(cur.pl)+')</td><td class="num" style="font-weight:600;color:'+(best.pl>0?"var(--good)":"var(--ink2)")+'">'+(best.pl>0?"+"+fW(best.pl)+" WETH ("+fU(best.pl)+")":"none")+'</td></tr>'+
+      '<tr><td>Return on what you spend</td><td class="num">'+(cur.spent?(cur.pl/cur.spent*100).toFixed(1)+"%":"-")+'</td><td class="num">'+(best.pl>0?(best.pl/best.o.spent*100).toFixed(1)+"%":"-")+'</td></tr></tbody>';
+    $("arbNote").textContent=needTxt+" The profit only exists if you do both steps in one transaction. If you do them by hand, the price can move in between. Gas is ignored, and so is anyone else doing the same trade at the same time.";
+  }
+  function initLoan(){["lnEq","lnRounds","lnVenue"].forEach(function(id){$(id).addEventListener(id==="lnEq"?"input":"change",renderAll)})}
+  function initCalc(){
+    var box=$("calcPresets");[0.1,0.5,1,2,5].forEach(function(v){var b=document.createElement("button");b.textContent=v+" WETH";b.addEventListener("click",function(){$("calcUnit").value="weth";$("calcAmt").value=v;renderAll()});box.appendChild(b)});
+    $("calcAmt").addEventListener("input",renderAll);$("calcUnit").addEventListener("change",renderAll);
+  }
+  function renderAll(){
+    var m=model(read());
+    renderTop(m);renderTable(m);renderChartA(m);renderCalc(m);renderLoan(m);renderArb(m);renderEvents();
+  }
+  ids.forEach(function(id){$(id).addEventListener("input",renderAll)});
+  $("btnSave").addEventListener("click",function(){
+    var p=read();mine.push({t:Date.now(),nav:p.inNav,auc:p.inAuc,mkt:p.inMkt});saveSnaps(mine);renderB();
+  });
+  $("btnClear").addEventListener("click",function(){mine=[];saveSnaps(mine);renderB()});
+  var raf=0;
+  function relayout(){cancelAnimationFrame(raf);raf=requestAnimationFrame(function(){renderAll();renderB()})}
+  if(window.ResizeObserver){new ResizeObserver(relayout).observe(document.body)}else{window.addEventListener("resize",relayout)}
+  initCalc();initLoan();$("arbSize").addEventListener("input",renderAll);lock(true);renderAll();renderB();start();
+})();
+</script>
+</body>
+</html>
